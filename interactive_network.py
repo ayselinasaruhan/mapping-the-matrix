@@ -1,4 +1,4 @@
-import csv
+import json
 from pyvis.network import Network
 import os
 import webbrowser
@@ -9,46 +9,40 @@ import re
 
 print("🌌 Building bulletproof PMID-mapped network universe...")
 
-if not os.path.exists("citation_network.csv"):
-    print("❌ Error: citation_network.csv not found! Run fetch_data.py first.")
+if not os.path.exists("citation_network.json"):
+    print("❌ Error: citation_network.json not found! Run fetch_data.py first.")
     exit()
 
 # 1. LOAD CLEAN DATA
-df = pd.read_csv("citation_network.csv")
-
-# Clean up basic identifiers
-df["Source_Paper_PMC"] = df["Source_Paper_PMC"].astype(str).str.strip()
-
-# Create a robust function to generate matching keys
-def generate_match_key(row):
-    pmid = str(row.get("pmid_cited", "")).strip().split('.')[0]
-    title = str(row.get("article_title", "")).strip()
-    
-    # Pathway A: Use PMID if it's valid
-    if pmid and pmid.lower() not in ["nan", "none", "null", ""]:
-        return f"PMID_{pmid}"
-    
-    # Pathway B: Fallback to normalized title string (lowercase, alphanumeric only)
-    if title and title.lower() not in ["nan", "none", "null", ""]:
-        clean_title = re.sub(r'[^a-zA-Z0-9]', '', title).lower()
-        if clean_title:
-            return f"TITLE_{clean_title}"
-            
-    return None
-
-# Apply the hybrid match key mapping
-df["Match_Key"] = df.apply(generate_match_key, axis=1)
-
-# Drop rows that have absolutely zero identifiable markers
-df = df.dropna(subset=["Source_Paper_PMC", "Match_Key"])
-df = df[~df["Source_Paper_PMC"].str.lower().isin(["nan", "none", "null", ""])]
-
-if df.empty:
-    print("❌ Error: No valid rows left after hybrid data matching! Check your CSV entries.")
+db_file = "citation_network.json"
+if not os.path.exists(db_file):
+    print(f"❌ Error: {db_file} not found! Run your updated fetch_data.py first.")
     exit()
+
+# Load the single-row-per-article JSON file directly into a Pandas DataFrame
+main_df = pd.read_json(db_file)
+print(f"📋 Loaded DataFrame: {len(main_df)} unique master articles currently on file.")
+
+# Unpack (explode) the nested reference lists into flat rows for the visualizer loop
+exploded_records = []
+for _, row in main_df.iterrows():
+    source = str(row["Source_Paper_PMC"])
+    for ref in row["References"]:
+        exploded_records.append({
+            "Source_Paper_PMC": source,
+            "Match_Key": ref["Match_Key"],
+            "pmid_cited": ref["pmid_cited"],
+            "article_title": ref["article_title"],
+            "name": ref["name"],
+            "year": ref["year"],
+            "journal": ref["journal"]
+        })
+
+df = pd.DataFrame(exploded_records)
 
 # Map out cross-reference intersections using our hybrid keys
 key_to_hubs = df.groupby("Match_Key")["Source_Paper_PMC"].apply(set).to_dict()
+# Extract every unique core hub paper present in your dataset
 unique_hubs = set(df["Source_Paper_PMC"].unique())
 
 # 2. INITIALIZE VISUALIZATION

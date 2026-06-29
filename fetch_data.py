@@ -2,13 +2,24 @@ import os
 import pandas as pd
 import pubmed_parser as pp
 import requests
+import json
 
 # 1. Load existing data
-if os.path.exists("citation_network.csv"):
-    df = pd.read_csv("citation_network.csv")
-    completed_ids = set(df["Source_Paper_PMC"].unique())
-else:
-    completed_ids = set()
+db_file = "citation_network.json"
+existing_data = []
+completed_ids = set()
+
+# Only try to read if the file exists and is not empty
+if os.path.exists(db_file) and os.path.getsize(db_file) > 0:
+    with open(db_file, "r", encoding="utf-8") as f:
+        try:
+            existing_data = json.load(f)
+            for item in existing_data:
+                if "Source_Paper_PMC" in item:
+                    completed_ids.add(str(item["Source_Paper_PMC"]))
+        except json.JSONDecodeError:
+            # If the file is corrupted or unreadable, start fresh
+            existing_data = []
 
 # 2. Open the text file containing IDs
 fhand = open("pmc_list.txt", "r")
@@ -34,36 +45,55 @@ for line in fhand:
             print(f"No references found for {pmc_id} (might not be open-access).")
             continue
 
-        # Convert raw API list to a Pandas DataFrame
-        df_new = pd.DataFrame(references)
+        cleaned_references = []
         
-        # 1. Add our core tracker column
-        df_new["Source_Paper_PMC"] = pmc_id
+        for ref in references:
+            # Clean up raw text inputs from the API parser
+            pmid_raw = str(ref.get("pmid_cited", "")).strip().split('.')[0]
+            title_raw = str(ref.get("article_title", "")).strip()
+            
+            # Determine the Hybrid Match Key
+            match_key = None
+            if pmid_raw and pmid_raw.lower() not in ["nan", "none", "null", ""]:
+                match_key = f"PMID_{pmid_raw}"
+            elif title_raw and title_raw.lower() not in ["nan", "none", "null", ""]:
+                import re
+                clean_title = re.sub(r'[^a-zA-Z0-9]', '', title_raw).lower()
+                if clean_title:
+                    match_key = f"TITLE_{clean_title}"
+            
+            # Skip this individual citation if it has no usable title or ID
+            if not match_key:
+                continue
+                
+            # Build the clean structured metadata for this reference
+            cleaned_references.append({
+                "Match_Key": match_key,
+                "pmid_cited": pmid_raw,
+                "article_title": title_raw,
+                "name": str(ref.get("name", "Unknown Author")),
+                "year": str(ref.get("year", "Unknown Year")).split('.')[0],
+                "journal": str(ref.get("journal", "Unknown Journal"))
+            })
 
-        # 2. Drop citations that don't have a PMID (e.g., books, external website links)
-        # This guarantees every remaining row can be accurately mapped in your network!
-        if "pmid_cited" in df_new.columns:
-            df_new = df_new.dropna(subset=["pmid_cited"])
-            # Prevent Pandas from turning integer IDs into floats (like 34567.0)
-            df_new["pmid_cited"] = df_new["pmid_cited"].astype(str).str.split('.').str[0]
-        else:
-            print(f"⚠️ Warning: No PMIDs found in reference structure for {pmc_id}")
-            continue
+        # Package the main paper and its nested reference list together
+        paper_entry = {
+            "Source_Paper_PMC": pmc_id,
+            "Total_References_Count": len(cleaned_references),
+            "References": cleaned_references
+        }
 
-        # 3. Keep ONLY your chosen 6 columns
-        target_columns = ["Source_Paper_PMC", "pmid_cited", "article_title", "name", "year", "journal"]
-        # Safe filtering in case the API completely omitted a column like 'year' for a paper
-        existing_columns = [col for col in target_columns if col in df_new.columns]
-        df_new = df_new[existing_columns]
+        # Append to master JSON
+        existing_data = [item for item in existing_data if str(item["Source_Paper_PMC"]) != str(pmc_id)]
         
-        # Fill any missing metadata blanks so they look clean in your tooltips
-        for meta_col in ["article_title", "name", "year", "journal"]:
-            if meta_col in df_new.columns:
-                df_new[meta_col] = df_new[meta_col].fillna("Unknown")
+        # Append our freshly grabbed paper data to our main memory list
+        existing_data.append(paper_entry)
+        
+        # Write the entire beautifully organized list back to the disk
+        with open(db_file, "w", encoding="utf-8") as f:
+            json.dump(existing_data, f, indent=4)
 
-        # Append to master CSV
-        df_new.to_csv("citation_network.csv", mode='a', header=not os.path.exists("citation_network.csv"), index=False)
-        print(f"Successfully saved {len(df_new)} clean PMID references for {pmc_id}!")
+        print(f"🎉 Successfully stored {len(cleaned_references)} nested references for {pmc_id}!")
         
     except Exception as e:
         print(f"Error parsing {pmc_id}: {e}")
