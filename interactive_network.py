@@ -4,175 +4,155 @@ import os
 import webbrowser
 import networkx as nx
 import json
+import pandas as pd
+import re
 
-print("Restoring full network constellations with unclipped titles...")
+print("🌌 Building bulletproof PMID-mapped network universe...")
 
-# ==========================================
-# 🛡️ RESILIENT LINE-BY-LINE PARSER (Bypasses Pandas Tracker Crashes)
-# ==========================================
-raw_rows = []
-try:
-    with open("citation_network.csv", mode="r", encoding="utf-8", errors="ignore") as f:
-        reader = csv.reader(f)
-        headers = next(reader, [])  # Grab header row safely
-        for row in reader:
-            if row:  # Avoid blank lines
-                raw_rows.append(row)
-    print(f"✅ Successfully read {len(raw_rows)} raw rows using fallback parsing layout!")
-except Exception as e:
-    print(f"❌ Failed to read CSV file: {e}")
+if not os.path.exists("citation_network.csv"):
+    print("❌ Error: citation_network.csv not found! Run fetch_data.py first.")
     exit()
 
-# Dynamic data collection arrays
-hubs = set()
-edges_to_add = []
-citation_to_hubs = {}
+# 1. LOAD CLEAN DATA
+df = pd.read_csv("citation_network.csv")
 
-for idx, row in enumerate(raw_rows, start=2):
-    source = None
-    target = None
+# Clean up basic identifiers
+df["Source_Paper_PMC"] = df["Source_Paper_PMC"].astype(str).str.strip()
+
+# Create a robust function to generate matching keys
+def generate_match_key(row):
+    pmid = str(row.get("pmid_cited", "")).strip().split('.')[0]
+    title = str(row.get("article_title", "")).strip()
     
-    # 1. Scan everything in this row to extract the core PMC paper ID
-    for item in row:
-        item_clean = item.strip()
-        if item_clean.startswith("PMC") and item_clean != "PMC":
-            source = item_clean
-            hubs.add(source)
+    # Pathway A: Use PMID if it's valid
+    if pmid and pmid.lower() not in ["nan", "none", "null", ""]:
+        return f"PMID_{pmid}"
+    
+    # Pathway B: Fallback to normalized title string (lowercase, alphanumeric only)
+    if title and title.lower() not in ["nan", "none", "null", ""]:
+        clean_title = re.sub(r'[^a-zA-Z0-9]', '', title).lower()
+        if clean_title:
+            return f"TITLE_{clean_title}"
             
-    # 2. Extract the best fit string for a target reference title
-    potential_targets = []
-    for item in row:
-        item_clean = item.strip()
-        if item_clean and not item_clean.startswith("PMC") and item_clean.lower() != "nan":
-            potential_targets.append(item_clean)
-            
-    # Look for an explicit text flag, or fall back to the longest descriptive string found
-    for t in potential_targets:
-        if t.startswith("Cited Study"):
-            target = t
-            break
-    if not target and potential_targets:
-        potential_targets.sort(key=len, reverse=True)
-        target = potential_targets[0]
-        
-    if not target:
-        target = f"Unknown Reference (Line {idx})"
-        
-    # Map out the valid pairs
-    if source:
-        edges_to_add.append((source, target))
-        if target not in citation_to_hubs:
-            citation_to_hubs[target] = set()
-        citation_to_hubs[target].add(source)
+    return None
 
-print(f"🎯 Discovered {len(hubs)} Core Hub papers across your dataset!")
-print(f"🔗 Loaded {len(edges_to_add)} total citation links.")
+# Apply the hybrid match key mapping
+df["Match_Key"] = df.apply(generate_match_key, axis=1)
 
-# ==========================================
-# 🗺️ INITIALIZE NETWORK VISUALIZATION
-# ==========================================
+# Drop rows that have absolutely zero identifiable markers
+df = df.dropna(subset=["Source_Paper_PMC", "Match_Key"])
+df = df[~df["Source_Paper_PMC"].str.lower().isin(["nan", "none", "null", ""])]
+
+if df.empty:
+    print("❌ Error: No valid rows left after hybrid data matching! Check your CSV entries.")
+    exit()
+
+# Map out cross-reference intersections using our hybrid keys
+key_to_hubs = df.groupby("Match_Key")["Source_Paper_PMC"].apply(set).to_dict()
+unique_hubs = set(df["Source_Paper_PMC"].unique())
+
+# 2. INITIALIZE VISUALIZATION
 net = Network(height="100vh", width="100%", bgcolor="#1a1a1a", font_color="white")
-net.options.nodes = {"font": {"size": 0, "color": "rgba(0,0,0,0)"}}
-net.options.interaction = {"hover": True, "tooltipDelay": 50, "hideEdgesOnDrag": False}
+net.options.nodes = {"font": {"size": 0, "color": "rgba(0,0,0,0)"}} # Hides raw labels for a clean starry look
+net.options.interaction = {"hover": True, "tooltipDelay": 50}
 
-# Advanced ForceAtlas2 distribution metrics
 physics_config = {
     "physics": {
         "solver": "forceAtlas2Based",
-        "forceAtlas2Based": {
-            "gravitationalConstant": -250,   
-            "centralGravity": 0.0005,        
-            "springLength": 180,             
-            "springConstant": 0.04,
-            "damping": 0.5,
-            "avoidOverlap": 1
-        },
-        "stabilization": {
-            "enabled": True,
-            "iterations": 1500,
-            "updateInterval": 50
-        }
+        "forceAtlas2Based": {"gravitationalConstant": -150, "centralGravity": 0.002, "springLength": 150, "avoidOverlap": 1},
+        "stabilization": {"enabled": True, "iterations": 1000}
     }
 }
 net.set_options(json.dumps(physics_config))
 
-# Populate structure smoothly
-for source, target_title in edges_to_add:
-    # Add Hub Node
+# 3. POPULATE NODES AND EDGES
+source_hub_count = 0
+for _, row in df.iterrows():
+    source = row["Source_Paper_PMC"]
+    target_pmid = row["Match_Key"]
+
+    # Fill descriptive blanks for tooltips
+    pmid_raw = str(row.get("pmid_cited", "Unknown")).split('.')[0]
+    pmid_display = "Not Provided" if pmid_raw.lower() in ["nan", "none", ""] else pmid_raw
+    
+    title_clean = str(row.get("article_title", "Unknown Title")).replace('"', "'")
+    name_clean = str(row.get("name", "Unknown Author"))
+    year_clean = str(row.get("year", "Unknown Year")).split('.')[0]
+    journal_clean = str(row.get("journal", "Unknown Journal"))
+    
+    # Construct a beautiful, clear hover tooltip using your saved metadata
+    tooltip_text = (
+        f"\n📄 Title: {row['article_title']}\n"
+        f"\n🆔 PMID: {target_pmid}\n"
+        f"\n👤 Author: {row['name']}\n"
+        f"\n📅 Year: {row['year']}\n"
+        f"\n📖 Journal: {row['journal']}"
+    )
+
+    # Add the Source Hub Node (Red Star) & count # of Soure Hubs
     if source not in net.node_ids:
+        source_hub_count = source_hub_count + 1
         net.add_node(
             source, 
             label=source,
-            title=f"⭐ CORE HUB:\nCore Research Paper ({source})", 
+            title=f"⭐ CORE HUB:\nPMC ID: {source}", 
             color="#E63946", 
-            size=50,  
-            font={"size": 14, "color": "white"} 
+            size=45,
+            font={"size": 14, "color": "white"}
         )
 
-    # Add or update background citation nodes
-    if target_title in net.node_ids:
-        if net.get_node(target_title).get("color") == "#E63946":
+    # Add or update the Background Reference Node
+    sharing_hubs = key_to_hubs.get(target_pmid, set())
+    
+    if target_pmid in net.node_ids:
+        # If it's already a hub node, leave its formatting alone
+        if net.get_node(target_pmid).get("color") == "#E63946":
             pass
-        elif len(citation_to_hubs.get(target_title, set())) > 1:
-            net.get_node(target_title)["color"] = "#FFB703" # Shared item intersection
-            net.get_node(target_title)["size"] = 30  
-            net.get_node(target_title)["title"] = f"🔗 SHARED CITATION:\n{target_title}"
+        # Turn it yellow if it's hit by more than one core paper
+        elif len(sharing_hubs) > 1:
+            net.get_node(target_pmid)["color"] = "#FFB703"
+            net.get_node(target_pmid)["size"] = 28
+            net.get_node(target_pmid)["title"] = f"🔗 SHARED CITATION ({len(sharing_hubs)} Hubs):\n" + tooltip_text
     else:
-        if len(citation_to_hubs.get(target_title, set())) > 1:
-            net.add_node(target_title, title=f"🔗 SHARED CITATION:\n{target_title}", color="#FFB703", size=30)
+        # Standard blue node for unique single citations, yellow for shared discoveries
+        if len(sharing_hubs) > 1:
+            net.add_node(target_pmid, title=f"🔗 SHARED CITATION ({len(sharing_hubs)} Hubs):\n" + tooltip_text, color="#FFB703", size=28)
         else:
-            net.add_node(target_title, title=target_title, color="#4EA8DE", size=18)
-        
-    net.add_edge(source, target_title, color="#555555", width=1.5)
+            net.add_node(target_pmid, title=tooltip_text, color="#4EA8DE", size=15)
 
-# ==========================================
-# 📊 CALCULATE GRAPH DYNAMICS
-# ==========================================
-G = nx.Graph()
-G.add_edges_from(edges_to_add)
+    # Establish the link
+    net.add_edge(source, target_pmid, color="#555555", width=1)
 
-total_nodes = G.number_of_nodes()
-total_edges = G.number_of_edges()
-
+# 4. CALCULATE GRAPH METRICS
+G = nx.from_pandas_edgelist(df, source="Source_Paper_PMC", target="pmid_cited")
 degrees = dict(G.degree())
-background_degrees = {k: v for k, v in degrees.items() if k not in hubs}
-most_cited_paper = max(background_degrees, key=background_degrees.get) if background_degrees else "None"
-max_citations = background_degrees[most_cited_paper] if background_degrees else 0
+background_degrees = {k: v for k, v in degrees.items() if k not in unique_hubs}
 
-print("\n--- 📈 GRAPH METRICS REPORT ---")
-print(f"Total Unique Papers (Nodes): {total_nodes}")
-print(f"Total Citation Links (Edges): {total_edges}")
-print(f"Most Influential Background Paper: '{most_cited_paper}' (Cited {max_citations} times!)")
-print("--------------------------------\n")
+print("\n--- 📈 UPDATED GRAPH METRICS REPORT ---")
+print(f"Total Unique Nodes in Map: {G.number_of_nodes()}")
+print(f"Total Source Hub Nodes: {source_hub_count}")
+print(f"Total Citation Connections: {G.number_of_edges()}")
+if background_degrees:
+    top_pmid = max(background_degrees, key=background_degrees.get)
+    top_title = df[df["pmid_cited"] == top_pmid]["article_title"].values[0]
+    print(f"Most Influential Shared Reference: PMID {top_pmid}")
+    print(f"↳ Title: '{top_title}' (Cited by {background_degrees[top_pmid]} of your core papers!)")
+print("---------------------------------------\n")
 
-# Save out the compiled map
+# 5. SAVE AND OPEN VISUALIZATION
 output_file = "animated_network.html"
 net.save_graph(output_file)
 
+# Inject custom auto-freeze physics animations
 with open(output_file, "r", encoding="utf-8") as f:
-    html_content = f.read()
-
-js_animation_injection = """
-    network.setOptions({
-        nodes: {
-            chosen: {
-                node: function(values, id, selected, hovering) {
-                    if (hovering) {
-                        values.size = values.size * 1.5;
-                        values.borderWidth = 3;
-                    }
-                }
-            }
-        }
-    });
-    network.on("stabilizationIterationsDone", function () {
-        network.setOptions({ physics: false });
-    });
+    html = f.read()
+js_inject = """
+    network.setOptions({ nodes: { chosen: { node: function(v, id, s, h) { if (h) { v.size = v.size * 1.4; v.borderWidth = 2; } } } } });
+    network.on("stabilizationIterationsDone", function () { network.setOptions({ physics: false }); });
 """
-html_content = html_content.replace("drawGraph();", f"drawGraph();\n{js_animation_injection}")
-
+html = html.replace("drawGraph();", f"drawGraph();\n{js_inject}")
 with open(output_file, "w", encoding="utf-8") as f:
-    f.write(html_content)
+    f.write(html)
 
-print(f"🚀 Full network map generated! Opening '{output_file}'...")
+print(f"🚀 Success! Opening clean interactive visualization window...")
 webbrowser.open("file://" + os.path.abspath(output_file))
