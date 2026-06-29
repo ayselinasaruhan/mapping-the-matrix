@@ -1,4 +1,4 @@
-import pandas as pd
+import csv
 from pyvis.network import Network
 import os
 import webbrowser
@@ -7,130 +7,129 @@ import json
 
 print("Restoring full network constellations with unclipped titles...")
 
-# 1. LOAD DATA
-df = pd.read_csv("citation_network.csv")
-hubs = df["Source_Paper_PMC"].unique().tolist()
-
-def get_target_title(row):
-    for col in ["Cited_Title", "title", "article_title"]:
-        if col in row and pd.notnull(row[col]):
-            return str(row[col]).strip()
-    return f"Unknown Reference (ID: {row.get('pmid', row.get('Reference_Number', 'Unknown'))})"
-
 # ==========================================
-# ADVANCED MAPPER: TRUE SHARED CITATION CALCULATION
+# 🛡️ RESILIENT LINE-BY-LINE PARSER (Bypasses Pandas Tracker Crashes)
 # ==========================================
+raw_rows = []
+try:
+    with open("citation_network.csv", mode="r", encoding="utf-8", errors="ignore") as f:
+        reader = csv.reader(f)
+        headers = next(reader, [])  # Grab header row safely
+        for row in reader:
+            if row:  # Avoid blank lines
+                raw_rows.append(row)
+    print(f"✅ Successfully read {len(raw_rows)} raw rows using fallback parsing layout!")
+except Exception as e:
+    print(f"❌ Failed to read CSV file: {e}")
+    exit()
+
+# Dynamic data collection arrays
+hubs = set()
+edges_to_add = []
 citation_to_hubs = {}
-for _, row in df.iterrows():
-    source = str(row["Source_Paper_PMC"]).strip()
-    if not source or source == "nan":
-        continue
-    target = get_target_title(row)
+
+for idx, row in enumerate(raw_rows, start=2):
+    source = None
+    target = None
     
-    if target not in citation_to_hubs:
-        citation_to_hubs[target] = set()
-    citation_to_hubs[target].add(source)
+    # 1. Scan everything in this row to extract the core PMC paper ID
+    for item in row:
+        item_clean = item.strip()
+        if item_clean.startswith("PMC") and item_clean != "PMC":
+            source = item_clean
+            hubs.add(source)
+            
+    # 2. Extract the best fit string for a target reference title
+    potential_targets = []
+    for item in row:
+        item_clean = item.strip()
+        if item_clean and not item_clean.startswith("PMC") and item_clean.lower() != "nan":
+            potential_targets.append(item_clean)
+            
+    # Look for an explicit text flag, or fall back to the longest descriptive string found
+    for t in potential_targets:
+        if t.startswith("Cited Study"):
+            target = t
+            break
+    if not target and potential_targets:
+        potential_targets.sort(key=len, reverse=True)
+        target = potential_targets[0]
+        
+    if not target:
+        target = f"Unknown Reference (Line {idx})"
+        
+    # Map out the valid pairs
+    if source:
+        edges_to_add.append((source, target))
+        if target not in citation_to_hubs:
+            citation_to_hubs[target] = set()
+        citation_to_hubs[target].add(source)
 
-# 2. INITIALIZE NETWORK
+print(f"🎯 Discovered {len(hubs)} Core Hub papers across your dataset!")
+print(f"🔗 Loaded {len(edges_to_add)} total citation links.")
+
+# ==========================================
+# 🗺️ INITIALIZE NETWORK VISUALIZATION
+# ==========================================
 net = Network(height="100vh", width="100%", bgcolor="#1a1a1a", font_color="white")
+net.options.nodes = {"font": {"size": 0, "color": "rgba(0,0,0,0)"}}
+net.options.interaction = {"hover": True, "tooltipDelay": 50, "hideEdgesOnDrag": False}
 
-net.options.nodes = {
-    "font": {
-        "size": 0,          
-        "color": "rgba(0,0,0,0)"  
-    }
-}
-
-net.options.interaction = {
-    "hover": True,
-    "tooltipDelay": 50,
-    "hideEdgesOnDrag": False
-}
-
-# ForceAtlas2 solver with slashed central gravity
+# Advanced ForceAtlas2 distribution metrics
 physics_config = {
     "physics": {
         "solver": "forceAtlas2Based",
         "forceAtlas2Based": {
-            "gravitationalConstant": -100,
-            "centralGravity": 0.005,
-            "springLength": 140,      # Slightly longer springs to accommodate larger dots
-            "springConstant": 0.06,
-            "damping": 0.4,
+            "gravitationalConstant": -250,   
+            "centralGravity": 0.0005,        
+            "springLength": 180,             
+            "springConstant": 0.04,
+            "damping": 0.5,
             "avoidOverlap": 1
         },
         "stabilization": {
             "enabled": True,
-            "iterations": 2000,
+            "iterations": 1500,
             "updateInterval": 50
         }
     }
 }
 net.set_options(json.dumps(physics_config))
 
-# 4. POPULATE STRUCTURE (With scaled-up node sizes!)
-for _, row in df.iterrows():
-    source = str(row["Source_Paper_PMC"]).strip()
-    
-    if not source or source == "nan":
-        continue
-        
-    target_title = get_target_title(row)
-
-    # Add Hub Node (Scaled up from 28 to 45)
-    if source in hubs:
-        if "Source_Paper_Title" in df.columns and pd.notnull(df[df["Source_Paper_PMC"] == source]["Source_Paper_Title"].iloc[0]):
-            hub_title = df[df["Source_Paper_PMC"] == source]["Source_Paper_Title"].iloc[0]
-        else:
-            hub_title = f"Core Research Paper ({source})"
-            
+# Populate structure smoothly
+for source, target_title in edges_to_add:
+    # Add Hub Node
+    if source not in net.node_ids:
         net.add_node(
             source, 
             label=source,
-            title=f"⭐ CORE HUB:\n{hub_title}", 
+            title=f"⭐ CORE HUB:\nCore Research Paper ({source})", 
             color="#E63946", 
-            size=45,  # 👈 Much bolder central presence
+            size=50,  
             font={"size": 14, "color": "white"} 
         )
 
-    # Add or update citation nodes
+    # Add or update background citation nodes
     if target_title in net.node_ids:
         if net.get_node(target_title).get("color") == "#E63946":
             pass
         elif len(citation_to_hubs.get(target_title, set())) > 1:
-            net.get_node(target_title)["color"] = "#FFB703"
-            net.get_node(target_title)["size"] = 28  # 👈 Scaled up shared nodes
+            net.get_node(target_title)["color"] = "#FFB703" # Shared item intersection
+            net.get_node(target_title)["size"] = 30  
             net.get_node(target_title)["title"] = f"🔗 SHARED CITATION:\n{target_title}"
     else:
         if len(citation_to_hubs.get(target_title, set())) > 1:
-            net.add_node(
-                target_title, 
-                title=f"🔗 SHARED CITATION:\n{target_title}", 
-                color="#FFB703", 
-                size=28
-            )
+            net.add_node(target_title, title=f"🔗 SHARED CITATION:\n{target_title}", color="#FFB703", size=30)
         else:
-            # Standard Blue Node (Scaled up from 10 to 20)
-            net.add_node(
-                target_title, 
-                title=target_title, 
-                color="#4EA8DE", 
-                size=20  # 👈 Highly visible from zoomed-out view
-            )
+            net.add_node(target_title, title=target_title, color="#4EA8DE", size=18)
         
-    # Thicker edges (width=2) so lines don't vanish at distance
-    net.add_edge(source, target_title, color="#555555", width=2)
+    net.add_edge(source, target_title, color="#555555", width=1.5)
 
 # ==========================================
-# GRAPH METRICS CALCULATOR
+# 📊 CALCULATE GRAPH DYNAMICS
 # ==========================================
 G = nx.Graph()
-for _, row in df.iterrows():
-    source = str(row["Source_Paper_PMC"]).strip()
-    if not source or source == "nan":
-        continue
-    target_title = get_target_title(row)
-    G.add_edge(source, target_title)
+G.add_edges_from(edges_to_add)
 
 total_nodes = G.number_of_nodes()
 total_edges = G.number_of_edges()
@@ -146,9 +145,7 @@ print(f"Total Citation Links (Edges): {total_edges}")
 print(f"Most Influential Background Paper: '{most_cited_paper}' (Cited {max_citations} times!)")
 print("--------------------------------\n")
 
-# ==========================================
-# 5. SAVE AND INJECT TRANSITIONS WITH PHYSICS FREEZE
-# ==========================================
+# Save out the compiled map
 output_file = "animated_network.html"
 net.save_graph(output_file)
 
@@ -177,5 +174,5 @@ html_content = html_content.replace("drawGraph();", f"drawGraph();\n{js_animatio
 with open(output_file, "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print(f"\n🚀 Full network restored! Opening '{output_file}'...")
+print(f"🚀 Full network map generated! Opening '{output_file}'...")
 webbrowser.open("file://" + os.path.abspath(output_file))
