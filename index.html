@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Massive Citation Universe</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #1a1a1a; font-family: sans-serif; overflow: hidden; }
+        #cy { width: 100vw; height: 100vh; display: block; }
+        #tooltip {
+            position: absolute; background: rgba(0, 0, 0, 0.85); color: #fff;
+            padding: 10px; border-radius: 5px; font-size: 12px; max-width: 300px;
+            pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 999;
+            border: 1px solid #555; white-space: pre-line;
+        }
+    </style>
+</head>
+<body>
+    <div id="tooltip"></div>
+    <div id="cy"></div>
+
+    <script src="network_data.js"></script>
+    <script>
+        const cy = cytoscape({
+            container: document.getElementById('cy'),
+            elements: graphElements,
+            style: [
+                // 1. Tiny standard reference points
+                { selector: 'node', style: { 'background-color': '#4EA8DE', 'width': 1.5, 'height': 1.5 } },
+                
+                // 2. Sleeker, downsized Core Hubs (Changed from 20 down to 8)
+                { selector: 'node[type="hub"]', style: { 'background-color': '#E63946', 'width': 8, 'height': 8, 'label': 'data(label)', 'color': '#fff', 'font-size': 4 } },
+                
+                // 3. Proportional shared node size
+                { selector: 'node[type="shared"]', style: { 'background-color': '#FFB703', 'width': 3, 'height': 3 } },
+                
+                // 4. FIX: Re-engineered edges to ensure they render cleanly over 800k elements
+                { 
+                    selector: 'edge', 
+                    style: { 
+                        'width': 0.3, 
+                        'line-color': '#777777', 
+                        'opacity': 0.08, 
+                        'curve-style': 'straight' // Swapped for reliable cross-browser path rendering
+                    } 
+                }
+            ],
+            // 🗺️ MASSIVE CANVAS FIX: Spreading everything out way past the laptop monitor's edges
+            layout: { 
+                name: 'random', 
+                padding: 50,
+                boundingBox: { x1: 0, y1: 0, w: 12000, h: 12000 } // Creates a giant map you can zoom/pan through
+            }
+        });
+
+        // Hover Tooltip Mechanics
+        const tooltip = document.getElementById('tooltip');
+        cy.on('mouseover', 'node', (e) => {
+            const node = e.target;
+            if(node.data('tooltip')) {
+                tooltip.innerHTML = node.data('tooltip');
+                tooltip.style.opacity = 1;
+            }
+        });
+        cy.on('mousemove', 'node', (e) => {
+            tooltip.style.left = (e.renderedPosition.x + 15) + 'px';
+            tooltip.style.top = (e.renderedPosition.y + 15) + 'px';
+        });
+        cy.on('mouseout', 'node', () => { tooltip.style.opacity = 0; });
+    </script>
+</body>
+</html>
