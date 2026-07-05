@@ -23,13 +23,21 @@ if os.path.exists(db_file) and os.path.getsize(db_file) > 0:
 
 # 2. Open the text file containing IDs
 fhand = open("pmc_list.txt", "r")
+papers_processed = 0
+max_papers = 200
 
 for line in fhand:
+    # Stop if we've reached the limit
+    if papers_processed >= max_papers:
+        print(f"Reached limit of {max_papers} papers. Stopping.")
+        break
     pmc_id = line.strip()
     
     if pmc_id in completed_ids:
         print(f"Skipping {pmc_id}, already processed.")
         continue
+    
+    papers_processed += 1
         
     print(f"Processing {pmc_id}...")
     

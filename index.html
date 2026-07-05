@@ -20,52 +20,67 @@
 
     <script src="network_data.js"></script>
     <script>
-        const cy = cytoscape({
-            container: document.getElementById('cy'),
-            elements: graphElements,
-            style: [
-                // 1. Tiny standard reference points
-                { selector: 'node', style: { 'background-color': '#4EA8DE', 'width': 1.5, 'height': 1.5 } },
-                
-                // 2. Sleeker, downsized Core Hubs (Changed from 20 down to 8)
-                { selector: 'node[type="hub"]', style: { 'background-color': '#E63946', 'width': 8, 'height': 8, 'label': 'data(label)', 'color': '#fff', 'font-size': 4 } },
-                
-                // 3. Proportional shared node size
-                { selector: 'node[type="shared"]', style: { 'background-color': '#FFB703', 'width': 3, 'height': 3 } },
-                
-                // 4. FIX: Re-engineered edges to ensure they render cleanly over 800k elements
-                { 
-                    selector: 'edge', 
-                    style: { 
-                        'width': 0.3, 
-                        'line-color': '#777777', 
-                        'opacity': 0.08, 
-                        'curve-style': 'straight' // Swapped for reliable cross-browser path rendering
-                    } 
-                }
-            ],
-            // 🗺️ MASSIVE CANVAS FIX: Spreading everything out way past the laptop monitor's edges
-            layout: { 
-                name: 'random', 
-                padding: 50,
-                boundingBox: { x1: 0, y1: 0, w: 12000, h: 12000 } // Creates a giant map you can zoom/pan through
+        document.addEventListener("DOMContentLoaded", function() {
+            if (typeof graphElements === 'undefined' || graphElements.length === 0) {
+                document.body.innerHTML = "<h2 style='color:white; text-align:center; margin-top:20%;'>⚠️ network_data.js missing or empty! Run generate_web_data.py first.</h2>";
+                return;
             }
-        });
 
-        // Hover Tooltip Mechanics
-        const tooltip = document.getElementById('tooltip');
-        cy.on('mouseover', 'node', (e) => {
-            const node = e.target;
-            if(node.data('tooltip')) {
-                tooltip.innerHTML = node.data('tooltip');
-                tooltip.style.opacity = 1;
-            }
+            const cy = cytoscape({
+                container: document.getElementById('cy'),
+                elements: graphElements,
+                style: [
+                    { selector: 'node', style: { 'background-color': '#4EA8DE', 'width': 4, 'height': 4 } },
+                    { selector: 'node[type="hub"]', style: { 'background-color': '#E63946', 'width': 25, 'height': 25, 'label': 'data(label)', 'color': '#fff', 'font-size': 10, 'text-valign': 'center' } },
+                    { selector: 'node[type="shared"]', style: { 'background-color': '#FFB703', 'width': 8, 'height': 8 } },
+                    { 
+                        selector: 'edge', 
+                        style: { 
+                            'width': 0.4, 
+                            'line-color': '#555555', 
+                            'opacity': 0.12, 
+                            'curve-style': 'haystack' 
+                        } 
+                    }
+                ],
+                // 🚀 FIX #1: Tell preset layout to automatically adjust fit and padding on start
+                layout: { 
+                    name: 'preset',
+                    fit: true,
+                    padding: 50
+                }
+            });
+
+            // 🏎️ Navigation optimization
+            // Hide lines completely during zoom/drag for instant responsive speed
+            cy.on('viewport', function() { 
+                cy.edges().style('display', 'none'); 
+            });
+            
+            let timeout;
+            cy.on('pan zoom', function() {
+                clearTimeout(timeout);
+                timeout = setTimeout(function() { 
+                    // 🚀 FIX #2: Changed invalid 'element' value to 'element-delayed' or 'visible'
+                    cy.edges().style('display', 'visible'); 
+                }, 200); 
+            });
+
+            // Tooltips
+            const tooltip = document.getElementById('tooltip');
+            cy.on('mouseover', 'node', (e) => {
+                const node = e.target;
+                if(node.data('tooltip')) {
+                    tooltip.innerHTML = node.data('tooltip');
+                    tooltip.style.opacity = 1;
+                }
+            });
+            cy.on('mousemove', 'node', (e) => {
+                tooltip.style.left = (e.renderedPosition.x + 15) + 'px';
+                tooltip.style.top = (e.renderedPosition.y + 15) + 'px';
+            });
+            cy.on('mouseout', 'node', () => { tooltip.style.opacity = 0; });
         });
-        cy.on('mousemove', 'node', (e) => {
-            tooltip.style.left = (e.renderedPosition.x + 15) + 'px';
-            tooltip.style.top = (e.renderedPosition.y + 15) + 'px';
-        });
-        cy.on('mouseout', 'node', () => { tooltip.style.opacity = 0; });
     </script>
 </body>
 </html>
