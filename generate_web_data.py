@@ -1,3 +1,6 @@
+# Generates a structured JSON file for the citation network, optimized for fast loading in the interactive visualization. It processes the raw citation data, normalizes it, and assigns fixed coordinates to each node based on a grid layout.
+# This one is much quicker than interactive_network.py, so it is currently the main way to generate the graph.
+
 import json
 import os
 import pandas as pd
@@ -46,8 +49,12 @@ reference_counts = {}
 
 print("📦 Building fixed coordinates layout...")
 for _, row in df.iterrows():
-    source = row["Source_Paper_PMC"]
-    target = row["Match_Key"]
+    # Force string conversion immediately to prevent float/NaN skips
+    source = str(row["Source_Paper_PMC"]).strip()
+    target = str(row["Match_Key"]).strip()
+
+    if not source or not target or source in ["nan", "None", ""] or target in ["nan", "None", ""]:
+        continue
     
     if not source or not target or source == "nan" or target == "nan":
         continue

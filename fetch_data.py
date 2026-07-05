@@ -22,9 +22,12 @@ if os.path.exists(db_file) and os.path.getsize(db_file) > 0:
             existing_data = []
 
 # 2. Open the text file containing IDs
-fhand = open("pmc_list.txt", "r")
+# fhand = open("pmc_list.txt", "r")
+
+# Temporarily limit to the first 150 papers for testing
+fhand = open("pmc_list_150.txt", "r")
 papers_processed = 0
-max_papers = 200
+max_papers = 150  # Limit for testing purposes
 
 for line in fhand:
     # Stop if we've reached the limit
