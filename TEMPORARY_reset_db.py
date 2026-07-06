@@ -1,3 +1,5 @@
+# Completely wipes the citation_network.json file, effectively resetting the database to an empty state.
+
 import json
 
 db_file = "citation_network.json"

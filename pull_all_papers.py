@@ -1,3 +1,5 @@
+# Pulls all papers from PubMed Central (PMC) that match a specific query and saves their IDs to a text file. It avoids duplicates by checking against existing IDs in the file.
+
 import os
 import time
 import requests

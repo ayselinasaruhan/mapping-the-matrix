@@ -1,3 +1,5 @@
+# Gets nested references for a list of PMC IDs and saves them to a JSON file. It avoids duplicates by checking against existing entries in the JSON file.
+
 import os
 import pandas as pd
 import pubmed_parser as pp

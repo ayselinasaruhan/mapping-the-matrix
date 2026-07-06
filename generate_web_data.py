@@ -101,6 +101,14 @@ for _, row in df.iterrows():
         
     elements.append({"data": {"id": f"e_{source}_{target}", "source": source, "target": target}})
 
+print("\n🔍 --- DATA GENERATION CHECK ---")
+print(f"Total graph elements generated: {len(elements)}")
+if elements:
+    print("\n👀 Sample of the first element structure:")
+    import pprint
+    pprint.pprint(elements[0])
+print("---------------------------------\n")
+
 with open("network_data.js", "w", encoding="utf-8") as f:
     f.write(f"const graphElements = {json.dumps(elements)};")
 

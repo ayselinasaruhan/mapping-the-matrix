@@ -1,3 +1,7 @@
+# Creates an interactive citation network visualization using PyVis and NetworkX. It loads a pre-processed JSON file containing citation data, constructs a graph, and generates an HTML file for interactive exploration. The visualization highlights core hub papers and shared citations, providing tooltips with detailed metadata for each node.
+# This one takes a while to load if there are a large number of papers, so I'm working on solutions to fix it.
+# Currently, this is not the main way to generate the graph.
+
 import json
 from pyvis.network import Network
 import os
