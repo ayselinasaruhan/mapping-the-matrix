@@ -90,9 +90,8 @@
                 cy.center(firstHub);   
             }
 
-            const bbox = cy.elements().bbox();
-            updateStatus('Cytoscape initialized. Nodes: ' + cy.nodes().length + ', Edges: ' + cy.edges().length + '. bbox=' + Math.round(bbox.x1) + ',' + Math.round(bbox.y1) + ' -> ' + Math.round(bbox.x2) + ',' + Math.round(bbox.y2));
-            console.log('[graph ready] nodes', cy.nodes().length, 'edges', cy.edges().length, 'bbox', bbox);
+            updateStatus('Cytoscape initialized. Nodes: ' + cy.nodes().length + ', Edges: ' + cy.edges().length);
+            console.log('[graph ready] nodes', cy.nodes().length, 'edges', cy.edges().length);
             cy.resize();
             cy.fit(20);
             cy.center();
@@ -104,16 +103,75 @@
             cy.pan({ x: 0, y: 0 });
             cy.center();
             updateStatus('Graph rendered. Debug node added at (0,0). If you still see nothing, the container may be hidden.');
-
-            // Tooltip interactive events
+            
+            // --- HOVER SYSTEM ---
             const tooltip = document.getElementById('tooltip');
-            cy.on('tap', 'node', function(evt){
+
+            // 1. Trigger when mouse enters a node (with a soft boundary)
+            cy.on('mouseover', 'node', function(evt) {
                 const node = evt.target;
+                
                 tooltip.innerHTML = node.data('tooltip') || node.data('id');
-                tooltip.style.left = (evt.renderedPosition.x + 15) + 'px';
-                tooltip.style.top = (evt.renderedPosition.y + 15) + 'px';
                 tooltip.style.opacity = 1;
+                
+                // Slightly scale up the node so the user gets visual feedback
+                node.style({
+                    'transform': 'scale(1.5)',
+                    'transition-property': 'transform',
+                    'transition-duration': '0.1s'
+                });
             });
+
+            // 2. Track the mouse movement smoothly so the tooltip floats next to it
+            cy.on('mousemove', function(evt) {
+                if (tooltip.style.opacity == 1) {
+                    tooltip.style.left = (evt.renderedPosition.x + 18) + 'px';
+                    tooltip.style.top = (evt.renderedPosition.y + 18) + 'px';
+                }
+            });
+
+            // 3. Hide the tooltip instantly when the mouse leaves the node's area
+            cy.on('mouseout', 'node', function(evt) {
+                const node = evt.target;
+                tooltip.style.opacity = 0;
+                
+                // Return node to its normal size
+                node.removeStyle(); 
+            });
+
+            // 4. Give the mouse a generous grab-radius area (Proximity Selection)
+            // This makes it so your big cursor doesn't have to be exactly on the 4px dot!
+            cy.on('mousemove', function(evt) {
+                const mousePos = evt.position; // Get current mouse coordinates in model space
+                let closestNode = null;
+                let minDistance = 35; // This is your magnetic grab-radius in pixels. Raise it if needed!
+
+                // Safely loop through every single node to find what's near the cursor
+                cy.nodes().forEach(function(node) {
+                    const nodePos = node.position();
+                    const distance = Math.sqrt(
+                        Math.pow(mousePos.x - nodePos.x, 2) + 
+                        Math.pow(mousePos.y - nodePos.y, 2)
+                    );
+                    
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestNode = node;
+                    }
+                });
+
+                // If we found a node close enough, fake a smooth hover event!
+                if (closestNode) {
+                    const currentTxt = tooltip.innerHTML;
+                    const newTxt = closestNode.data('tooltip') || closestNode.data('id');
+                    
+                    if (currentTxt !== newTxt) {
+                        cy.nodes().removeStyle(); // Clear any old scaled-up nodes
+                        closestNode.trigger('mouseover');
+                    }
+                }
+            });
+            // ----------------------------------------
 
             cy.on('tap', function(evt){
                 if(evt.target === cy){
