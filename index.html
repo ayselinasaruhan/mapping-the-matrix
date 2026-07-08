@@ -61,6 +61,7 @@
             const cy = cytoscape({
                 container: document.getElementById('cy'),
                 elements: graphElements,
+                pan: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
                 style: [
                     { selector: 'node', style: { 'background-color': '#4EA8DE', 'width': 12, 'height': 12 } },
                     { selector: 'node[type="hub"]', style: { 'background-color': '#E63946', 'width': 30, 'height': 30, 'label': 'data(label)', 'color': '#fff', 'font-size': 10, 'text-valign': 'center' } },
@@ -82,6 +83,12 @@
                     padding: 30
                 }
             });
+
+            const firstHub = cy.nodes('[type="hub"]').first();
+            if (firstHub.length > 0) {
+                cy.zoom(0.5);          
+                cy.center(firstHub);   
+            }
 
             const bbox = cy.elements().bbox();
             updateStatus('Cytoscape initialized. Nodes: ' + cy.nodes().length + ', Edges: ' + cy.edges().length + '. bbox=' + Math.round(bbox.x1) + ',' + Math.round(bbox.y1) + ' -> ' + Math.round(bbox.x2) + ',' + Math.round(bbox.y2));
