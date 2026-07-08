@@ -27,21 +27,53 @@ df["article_title"] = ref_df.get("article_title", "Unknown Title").fillna("Unkno
 df["name"] = ref_df.get("name", "Unknown Author").fillna("Unknown Author")
 df["year"] = ref_df.get("year", "Unknown Year").fillna("Unknown Year")
 
-key_to_hubs = df.groupby("Match_Key")["Source_Paper_PMC"].apply(set).to_dict()
+# --- CHRONOLOGICAL TIMELINE LAYOUT ---
 unique_hubs = list(df["Source_Paper_PMC"].unique())
+key_to_hubs = df.groupby("Match_Key")["Source_Paper_PMC"].apply(set).to_dict()
 
-num_hubs = len(unique_hubs)
-grid_size = math.ceil(math.sqrt(num_hubs))
+# 1. Figure out the publication year for each unique hub paper
+hub_years = {}
+for hub in unique_hubs:
+    # Look up rows where this hub is the Source_Paper_PMC
+    hub_rows = df[df["Source_Paper_PMC"] == hub]
+    if not hub_rows.empty:
+        try:
+            # Get the year, default to 2020 if something breaks or missing
+            year_val = int(float(str(hub_rows.iloc[0]["Year"]).split('.')[0]))
+        except:
+            year_val = 2020
+    else:
+        year_val = 2020
+    hub_years[hub] = year_val
+
+# 2. Sort the hubs from oldest year to newest year
+sorted_hubs = sorted(unique_hubs, key=lambda h: hub_years[h])
+
+# 3. Spread them out linearly across the X axis, adding variation to Y so they don't overlap in a flat line
+hub_positions = {}
+x_spacing = 3500  # Horizontal distance between eras
+y_spacing = 2000  # Vertical spacing variation
+
+for idx, hub in enumerate(sorted_hubs):
+    # X advances steadily based on its chronological order
+    x_pos = idx * x_spacing
+    
+    # Alternating or staggering Y so they cascade beautifully like tree branches
+    y_pos = (idx % 3 - 1) * y_spacing 
+    
+    hub_positions[hub] = {
+        "x": float(x_pos),
+        "y": float(y_pos)
+    }
+# ----------------------------------------
+
 hub_spacing = 4000  
 
-hub_positions = {}
-for idx, hub in enumerate(unique_hubs):
-    row_idx = idx // grid_size
-    col_idx = idx % grid_size
-    hub_positions[hub] = {
-        "x": col_idx * hub_spacing,
-        "y": row_idx * hub_spacing
-    }
+elements = []
+seen_nodes = set()
+reference_counts = {}
+
+print("🔮 Building fixed coordinates layout...")
 
 elements = []
 seen_nodes = set()
