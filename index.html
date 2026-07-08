@@ -233,6 +233,9 @@
                 const hubId = node.data('id');
                 const label = node.data('label') || hubId;
                 
+                // Safely look for the summary data, or use a placeholder if it isn't generated yet
+                const summaryText = node.data('summary') || "<ul><li>[AI Analysis Pending for this cluster]</li></ul>";
+                
                 sidebarContent.innerHTML = `
                     <h2>🔬 Core Hub: ${label}</h2>
                     <p><b>ID:</b> ${hubId}</p>
@@ -240,8 +243,10 @@
                     <h3>💡 Timeline Context</h3>
                     <p>This cluster represents a key evolutionary step in the timeline. The papers surrounding this hub evaluate its core concepts and build upon them.</p>
                     
-                    <h3>🤖 AI Narrative Summary</h3>
-                    <p style="font-style: italic; color: #aaa;">[AI Analysis Pending... Our next script updates will pre-compile deep summaries directly into this window!]</p>
+                    <h3>🤖 Gemini AI Narrative Summary</h3>
+                    <div style="line-height: 1.6; color: #e0e0e0;">
+                        ${summaryText}
+                    </div>
                 `;
                 
                 sidebar.classList.add('open');
@@ -250,6 +255,13 @@
             // Close sidebar when clicking the "X" button
             sidebarClose.addEventListener('click', function() {
                 sidebar.classList.remove('open');
+            });
+
+            // Close sidebar if clicking the blank background canvas
+            cy.on('tap', function(evt) {
+                if (evt.target === cy) {
+                    sidebar.classList.remove('open');
+                }
             });
 
             // Close sidebar if clicking the blank background canvas
