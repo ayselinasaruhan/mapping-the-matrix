@@ -6,22 +6,31 @@ import pubmed_parser as pp
 import requests
 import json
 
-# 1. Load existing data
-db_file = "citation_network.json"
-existing_data = []
+# 1. Load existing normalized data structures
+map_file = "paper_citation_map.json"
+lookup_file = "article_lookup.json"
+
+paper_citation_map = {}
+article_lookup = {}
 completed_ids = set()
 
-# Only try to read if the file exists and is not empty
-if os.path.exists(db_file) and os.path.getsize(db_file) > 0:
-    with open(db_file, "r", encoding="utf-8") as f:
-        try:
-            existing_data = json.load(f)
-            for item in existing_data:
-                if "Source_Paper_PMC" in item:
-                    completed_ids.add(str(item["Source_Paper_PMC"]))
-        except json.JSONDecodeError:
-            # If the file is corrupted or unreadable, start fresh
-            existing_data = []
+# Load Paper Citation Map if it exists
+if os.path.exists(map_file) and os.path.getsize(map_file) > 0:
+    try:
+        with open(map_file, "r", encoding="utf-8") as f:
+            paper_citation_map = json.load(f)
+            # The keys of this map are the source papers we've already parsed
+            completed_ids = set(paper_citation_map.keys())
+    except json.JSONDecodeError:
+        paper_citation_map = {}
+
+# Load Article Details Lookup Table if it exists
+if os.path.exists(lookup_file) and os.path.getsize(lookup_file) > 0:
+    try:
+        with open(lookup_file, "r", encoding="utf-8") as f:
+            article_lookup = json.load(f)
+    except json.JSONDecodeError:
+        article_lookup = {}
 
 # 2. Open the text file containing IDs
 # fhand = open("pmc_list.txt", "r")
@@ -69,14 +78,8 @@ for line in fhand:
             match_key = None
             if pmid_raw and pmid_raw.lower() not in ["nan", "none", "null", ""]:
                 match_key = f"PMID_{pmid_raw}"
-            elif title_raw and title_raw.lower() not in ["nan", "none", "null", ""]:
-                import re
-                clean_title = re.sub(r'[^a-zA-Z0-9]', '', title_raw).lower()
-                if clean_title:
-                    match_key = f"TITLE_{clean_title}"
-            
-            # Skip this individual citation if it has no usable title or ID
-            if not match_key:
+            else:
+                print("This paper has no valid PMID, skipping this reference.")
                 continue
                 
             # Build the clean structured metadata for this reference
@@ -89,27 +92,42 @@ for line in fhand:
                 "journal": str(ref.get("journal", "Unknown Journal"))
             })
 
-        # Package the main paper and its nested reference list together
-        paper_entry = {
-            "Source_Paper_PMC": pmc_id,
-            "Total_References_Count": len(cleaned_references),
-            "References": cleaned_references
-        }
+        # Package the main paper connections (File 1 Structure)
+        # Gathers just the string match keys for this source paper
+        paper_citation_map[pmc_id] = [ref["Match_Key"] for ref in cleaned_references]
 
-        # Append to master JSON
-        existing_data = [item for item in existing_data if str(item["Source_Paper_PMC"]) != str(pmc_id)]
-        
-        # Append our freshly grabbed paper data to our main memory list
-        existing_data.append(paper_entry)
-        
-        # Write the entire beautifully organized list back to the disk
-        with open(db_file, "w", encoding="utf-8") as f:
-            json.dump(existing_data, f, indent=4)
+        # Package individual reference details (File 2 Structure)
+        for ref in cleaned_references:
+            key = ref["Match_Key"]
+            # Safe checkpoint: only add details if we haven't seen this key before
+            if key not in article_lookup:
+                article_lookup[key] = {
+                    "pmid_cited": ref["pmid_cited"],
+                    "article_title": ref["article_title"],
+                    "name": ref["name"],
+                    "year": ref["year"],
+                    "journal": ref["journal"]
+                }
+            else:
+                print(f"Duplicate entry for {key} found, skipping addition to lookup.")
 
-        print(f"🎉 Successfully stored {len(cleaned_references)} nested references for {pmc_id}!")
-        
+        # Write BOTH beautifully organized files back to disk atomically
+        try:
+            with open(map_file, "w", encoding="utf-8") as f:
+                json.dump(paper_citation_map, f, indent=4)
+                
+            with open(lookup_file, "w", encoding="utf-8") as f:
+                json.dump(article_lookup, f, indent=4)
+
+            print(f" Saved structural map & unique details for {pmc_id}!")
+        except Exception as write_err:
+            print(f" Disk write issue for {pmc_id}: {write_err}")
+
     except Exception as e:
         print(f"Error parsing {pmc_id}: {e}")
 
 fhand.close()
+
 print("All papers processed!")
+print(f"Total Main Papers stored:   {len(paper_citation_map)}")
+print(f"Total Unique PMIDs stored:  {len(article_lookup)}")
