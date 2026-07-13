@@ -6,6 +6,7 @@ import pubmed_parser as pp
 import requests
 import json
 
+
 # 1. Load existing normalized data structures
 map_file = "paper_citation_map.json"
 lookup_file = "article_lookup.json"
@@ -36,7 +37,7 @@ if os.path.exists(lookup_file) and os.path.getsize(lookup_file) > 0:
 # fhand = open("pmc_list.txt", "r")
 
 # Temporarily limit to the first 150 papers for testing
-fhand = open("pmc_list_150.txt", "r")
+fhand = open("backup-data/pmc_list_150.txt", "r")
 papers_processed = 0
 max_papers = 150  # Limit for testing purposes
 
