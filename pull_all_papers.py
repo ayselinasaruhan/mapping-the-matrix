@@ -5,9 +5,11 @@ import time
 import requests
 import xml.etree.ElementTree as ET
 
-query = "Artificial Intelligence AND Human Cognition AND open access[Filter]"
-batch_size = 2000  
-filename = "pmc_list.txt"
+query = "open access[Filter]"
+filename = "pmc_list_huge.txt"
+batch_size = 10000  
+
+print(f"Starting search with max capacity batch sizes of {batch_size}...")
 
 # --- SAFEGUARD: Load existing IDs first to avoid duplicates ---
 existing_ids = set()
