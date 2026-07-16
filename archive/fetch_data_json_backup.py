@@ -1,4 +1,5 @@
 # Gets nested references for a list of PMC IDs and saves them to a JSON file. It avoids duplicates by checking against existing entries in the JSON file.
+# This was used before to save <200 papers in a JSON file. Since the PMC list has grown to 500k+ papers, this script is now archived
 
 import os
 import pandas as pd
