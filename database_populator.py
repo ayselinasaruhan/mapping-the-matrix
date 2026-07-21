@@ -32,7 +32,7 @@ conn.commit()
 
 
 # --- 2. INPUT SEED CONFIGURATION ---
-input_file = "archive/pmc_list_150.txt"  # Points to your archived seed IDs
+input_file = "pmc_list_huge.txt"
 
 if not os.path.exists(input_file):
     print(f"Error: {input_file} not found. Ensure your target ID list is in the archive folder!")
@@ -96,7 +96,7 @@ for pmc_id in pmc_ids:
         # Extract source journal details
         source_element = ref.find(".//source")
         if source_element is not None:
-            ref_data["journal"] = source_element.text.strip()
+            ref_data["journal"] = source_element.text.strip() if (source_element is not None and source_element.text) else "Unknown Journal"
 
         # Extract publication year details
         year_element = ref.find(".//year")
